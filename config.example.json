@@ -1,0 +1,14 @@
+{
+    "adrank_id": "여기에_아이디",
+    "adrank_pw": "여기에_비밀번호",
+    "google_credentials_file": "credentials.json",
+    "keyword_sheet_url": "https://docs.google.com/spreadsheets/d/키워드시트ID/edit",
+    "keyword_sheet_name": "시트1",
+    "result_sheet_url": "https://docs.google.com/spreadsheets/d/결과시트ID/edit",
+    "result_sheet_gid": 0,
+    "data_start_row": 3,
+    "row_interval": 4,
+    "date_start_column": 7,
+    "search_wait_seconds": 5,
+    "between_search_delay": 15
+}

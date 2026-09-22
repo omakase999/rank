@@ -1,0 +1,25 @@
+# === 민감 정보 (절대 커밋 금지) ===
+# credentials.json = 구글 서비스계정 비밀키
+# config.json = 애드랭크 아이디/비밀번호 포함
+credentials.json
+config.json
+배포용/credentials.json
+배포용/config.json
+files_extracted/config.json
+
+# === 파이썬 ===
+__pycache__/
+*.pyc
+*.pyo
+
+# === 압축/배포 산출물 ===
+*.zip
+
+# === 로컬 DB / 임시 ===
+*.db
+web_study/todos.db
+
+# === OS ===
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& \"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\" --version)",
+      "PowerShell(\\(Get-Item \"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\"\\).VersionInfo.FileVersion)",
+      "WebSearch",
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)",
+      "mcp__visualize__read_me"
+    ]
+  }
+}
