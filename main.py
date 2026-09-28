@@ -932,6 +932,17 @@ def run():
     businesses = read_keywords(keyword_sheet)
     print(f"  -> {len(businesses)}개 업체")
 
+    # 상호(B열)가 빈 행은 검색 불가 — 빈 상호는 API의 이름 없는 업체와 잘못 매칭됨
+    no_name = [b for b in businesses if not b["name"]]
+    if no_name:
+        businesses = [b for b in businesses if b["name"]]
+        print(f"  ! 상호 빈칸 {len(no_name)}개 제외 (업체 추출을 먼저 실행하세요): "
+              + ", ".join(b["keyword"] for b in no_name[:5])
+              + (" ..." if len(no_name) > 5 else ""))
+    if not businesses:
+        print("  X 검색할 업체가 없습니다. 키워드 시트 B열(상호)을 채워주세요.")
+        return
+
     # [3] 결과 시트 확인 → 기존/신규 분류
     print("\n[3/5] 결과 시트 확인 중...")
     existing = read_result_sheet(result_sheet, config)
