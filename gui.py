@@ -20,10 +20,11 @@ from datetime import datetime, timedelta
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
-# 작업 목록 (모듈명, 표시명, 설명)
+# 작업 목록 (모듈명, 표시명, 설명) — 여러 개 체크 시 이 순서대로 실행됨
+# 업체 추출(상호 채움) → 순위 검색(결과 시트에 MID 기록) → MID 동기화 순서여야 함
 TASKS = [
-    ("main", "순위 검색", "adrank 순위+점수 검색 → 결과 시트 기록"),
     ("pick_random_biz", "업체 추출", "후순위 업체 랜덤 추출 → 키워드 시트 기록"),
+    ("main", "순위 검색", "adrank 순위+점수 검색 → 결과 시트 기록"),
     ("sync_mid", "MID 동기화", "결과 시트 MID → 키워드 시트 동기화"),
     ("sync_traffic", "길찾기/유입", "키워드 시트 길찾기·유입 → 결과 시트 동기화"),
     ("group_rows", "행 그룹화", "결과 시트 4행 단위 그룹화"),
