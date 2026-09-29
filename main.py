@@ -266,7 +266,13 @@ def setup_browser():
         print(f"  Chrome 버전: {chrome_ver} (메이저: {major})")
 
         # 해당 메이저 버전의 chromedriver 찾기
-        for sp in site.getsitepackages():
+        # 사용자 설치(pip --user) 경로도 포함 — AppData\Roaming\Python\...\site-packages
+        search_dirs = list(site.getsitepackages())
+        try:
+            search_dirs.append(site.getusersitepackages())
+        except Exception:
+            pass
+        for sp in search_dirs:
             candidate = os.path.join(sp, "chromedriver_autoinstaller", major, "chromedriver.exe")
             if os.path.exists(candidate):
                 chromedriver_path = candidate
@@ -288,9 +294,14 @@ def setup_browser():
     if chromedriver_path and os.path.exists(chromedriver_path):
         print(f"  ChromeDriver 경로: {chromedriver_path}")
         service = Service(executable_path=chromedriver_path)
-        return webdriver.Chrome(service=service, options=options)
-    else:
-        return webdriver.Chrome(options=options)
+        try:
+            return webdriver.Chrome(service=service, options=options)
+        except Exception as e:
+            # 크롬이 업데이트 대기 중이면 드라이버와 버전이 어긋남 → Selenium이 맞는 드라이버를 직접 받게 함
+            if "only supports Chrome version" not in str(e):
+                raise
+            print("  ChromeDriver 버전 불일치 → 크롬 버전에 맞는 드라이버로 재시도")
+    return webdriver.Chrome(options=options)
 
 
 def auto_fill_login(driver, config):
