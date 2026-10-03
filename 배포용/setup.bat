@@ -1,12 +1,15 @@
 @echo off
 chcp 65001 >nul
+REM 파이썬 찾기: py 런처 우선 (python은 MS스토어 바로가기일 수 있음)
+set "PY=python"
+where py >nul 2>nul && set "PY=py -3"
 echo ================================================
 echo   AD RANK 자동화 - 설치 스크립트
 echo ================================================
 echo.
 
 REM Python 설치 확인
-python --version >nul 2>&1
+%PY% --version >nul 2>&1
 if errorlevel 1 (
     echo [오류] Python이 설치되어 있지 않습니다.
     echo 아래 링크에서 Python을 설치해주세요:
@@ -21,7 +24,7 @@ echo [1/2] Python 확인 완료
 echo.
 
 echo [2/2] 필요한 패키지 설치 중...
-pip install selenium gspread google-auth chromedriver-autoinstaller --quiet
+%PY% -m pip install selenium gspread google-auth chromedriver-autoinstaller --quiet
 
 echo.
 echo ================================================
