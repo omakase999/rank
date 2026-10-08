@@ -23,3 +23,6 @@ web_study/todos.db
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 순위 갱신 시각 기록
+rank_watch.csv
