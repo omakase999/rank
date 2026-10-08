@@ -960,53 +960,28 @@ def run():
     date_col = find_today_column(result_sheet, config)
     print(f"  -> 오늘 날짜 열: {date_col}열")
 
-    # 기존 업체의 오늘 순위+점수 일괄 확인
-    today_data = {}
+    # 업체별 키 (같은 상호+키워드가 여러 번 나오면 순번 붙임)
     key_counter = {}
     for biz in businesses:
         base_key = f"{biz['name']}|{biz['keyword']}"
         key_counter[base_key] = key_counter.get(base_key, 0) + 1
-        biz_key = base_key if key_counter[base_key] == 1 else f"{base_key}|{key_counter[base_key]}"
-        biz["_key"] = biz_key
-        ex = existing.get(biz_key, {})
-        if ex.get("sheet_row"):
-            try:
-                rank_val = result_sheet.cell(ex["sheet_row"], date_col).value or ""
-                score_val = result_sheet.cell(ex["sheet_row"] + 1, date_col).value or ""
-                today_data[biz_key] = (rank_val, score_val)
-            except:
-                pass
+        biz["_key"] = base_key if key_counter[base_key] == 1 else f"{base_key}|{key_counter[base_key]}"
 
+    # 오늘 칸이 이미 채워져 있어도 스킵하지 않고 다시 검색해 덮어씀
+    # (애드랭크 순위가 하루 중에도 바뀌므로 실행 시점의 최신 순위를 기록)
     new_businesses = []    # 결과 시트에 아예 없음 → 새 행 생성
-    fill_businesses = []   # 결과 시트에 있지만 키워드/MID 등 빈칸 → 보완
-    skip_businesses = []   # 오늘 데이터 완비 → 스킵
-    work_businesses = []   # 실제 검색 대상 (fill + new + 재작업)
+    fill_businesses = []   # 결과 시트에 있지만 키워드 빈칸 → 보완
+    work_businesses = []   # 실제 검색 대상 (전체)
 
     for biz in businesses:
-        biz_key = biz["_key"]
-        ex = existing.get(biz_key, {})
-        rank_val, score_val = today_data.get(biz_key, ("", ""))
-
+        ex = existing.get(biz["_key"], {})
         if ex.get("sheet_row"):
-            # 결과 시트에 상호명 존재
-            rank_is_num = bool(re.match(r'^\d+\.?\d*$', rank_val))
-            score_is_num = bool(re.match(r'^\d+\.?\d*$', score_val))
-            has_keyword = bool(ex.get("keyword"))
-            has_mid = bool(ex.get("mid"))
-
-            if rank_is_num and score_is_num and has_keyword and has_mid:
-                skip_businesses.append(biz)
-            else:
-                # 키워드 비어있으면 채워넣기
-                if not has_keyword:
-                    fill_businesses.append(biz)
-                work_businesses.append(biz)
+            if not ex.get("keyword"):
+                fill_businesses.append(biz)
         else:
-            # 결과 시트에 없음 → 새 행 생성
             new_businesses.append(biz)
-            work_businesses.append(biz)
+        work_businesses.append(biz)
 
-    print(f"  -> 스킵(완비): {len(skip_businesses)}개")
     print(f"  -> 보완(키워드/MID 등 채우기): {len(fill_businesses)}개")
     print(f"  -> 신규: {len(new_businesses)}개")
     print(f"  -> 검색 대상: {len(work_businesses)}개")
