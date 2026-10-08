@@ -1078,6 +1078,15 @@ def run():
         for kw_idx, (keyword, biz_list) in enumerate(keyword_groups.items(), 1):
             print(f"\n[키워드 {kw_idx}/{kw_total}] '{keyword}'")
 
+            # 검색 전에 이 키워드 업체들의 오늘 순위/점수 칸을 비움
+            # → 검색이 실패해도 이전 실행 값이 남아 새 값처럼 보이지 않음
+            clear_cells = []
+            for biz in biz_list:
+                row = existing.get(biz["_key"], {}).get("sheet_row")
+                if row:
+                    clear_cells += [(row, date_col, ""), (row + 1, date_col, "")]
+            batch_write(result_sheet, clear_cells)
+
             if not search_keyword(driver, keyword):
                 print(f"  X 검색 실패, 건너뜁니다.")
                 continue
