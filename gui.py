@@ -84,13 +84,18 @@ class App:
         task_frame.pack(fill="x", padx=10, pady=(10, 5))
 
         self.task_vars = {}
-        for i, (mod, name, desc) in enumerate(TASKS):
+        row = 0
+        for mod, name, desc in TASKS:
             var = tk.BooleanVar(value=False)
             self.task_vars[mod] = var
             cb = ttk.Checkbutton(task_frame, text=f"{name}", variable=var)
-            cb.grid(row=i, column=0, sticky="w", padx=(0, 10))
+            cb.grid(row=row, column=0, sticky="w", padx=(0, 10))
             lbl = ttk.Label(task_frame, text=desc, foreground="gray")
-            lbl.grid(row=i, column=1, sticky="w")
+            lbl.grid(row=row, column=1, sticky="w")
+            row += 1
+            if mod == "pick_random_biz":
+                self._build_pick_range(task_frame, row)
+                row += 1
 
         # ─── 중단: 버튼 + 진행률 ───
         ctrl_frame = ttk.Frame(self.root, padding=5)
@@ -192,10 +197,48 @@ class App:
         self.clock_label.config(text=f"현재: {now.strftime('%H:%M:%S')}")
         self.root.after(1000, self._tick_clock)
 
+    def _build_pick_range(self, parent, row):
+        """업체 추출 순위 범위 입력칸 (config.json의 pick_rank_min/max에 저장)"""
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        self.pick_min_var = tk.StringVar(value=str(cfg.get("pick_rank_min", 60)))
+        self.pick_max_var = tk.StringVar(value=str(cfg.get("pick_rank_max", 180)))
+
+        frame = ttk.Frame(parent)
+        frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=(24, 0), pady=(0, 4))
+        ttk.Label(frame, text="추출 순위 범위:").pack(side="left", padx=(0, 5))
+        ttk.Spinbox(frame, from_=1, to=200, width=5, textvariable=self.pick_min_var).pack(side="left")
+        ttk.Label(frame, text="위 ~").pack(side="left", padx=5)
+        ttk.Spinbox(frame, from_=1, to=200, width=5, textvariable=self.pick_max_var).pack(side="left")
+        ttk.Label(frame, text="위").pack(side="left", padx=(5, 10))
+        ttk.Label(frame, text="(이 범위에 업체가 없으면 뒤쪽 1/3에서 선택)", foreground="gray").pack(side="left")
+
+    def _save_pick_range(self):
+        """입력값 검사 후 config.json에 저장. 잘못된 값이면 False"""
+        try:
+            lo, hi = int(self.pick_min_var.get()), int(self.pick_max_var.get())
+        except ValueError:
+            messagebox.showerror("범위 확인", "추출 순위 범위에 숫자를 입력하세요.")
+            return False
+        if not (1 <= lo <= 200 and 1 <= hi <= 200) or lo > hi:
+            messagebox.showerror("범위 확인", "추출 순위 범위를 확인하세요.\n(1~200, 앞 숫자가 뒤 숫자보다 작거나 같아야 합니다)")
+            return False
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        cfg["pick_rank_min"], cfg["pick_rank_max"] = lo, hi
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=4)
+        return True
+
     def schedule_start(self):
         selected = [mod for mod, var in self.task_vars.items() if var.get()]
         if not selected:
             messagebox.showwarning("선택 없음", "실행할 작업을 하나 이상 선택하세요.")
+            return
+        if "pick_random_biz" in selected and not self._save_pick_range():
             return
 
         has_browser_task = any(mod in selected for mod in ("main", "pick_random_biz"))
@@ -247,6 +290,8 @@ class App:
         selected = [mod for mod, var in self.task_vars.items() if var.get()]
         if not selected:
             messagebox.showwarning("선택 없음", "실행할 작업을 하나 이상 선택하세요.")
+            return
+        if not scheduled and "pick_random_biz" in selected and not self._save_pick_range():
             return
 
         self.running = True

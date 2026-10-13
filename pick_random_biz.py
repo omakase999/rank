@@ -2,7 +2,8 @@
 """
 후순위 업체 랜덤 추출기
 - 키워드 시트 A열의 키워드로 adrank 검색
-- 60등~180등(또는 마지막 등수) 사이에서 랜덤 1곳 선택
+- GUI '추출 순위 범위'(config.json pick_rank_min~pick_rank_max, 기본 60~180) 사이에서 랜덤 1곳 선택
+  (결과가 범위 끝까지 안 나오면 마지막 등수까지, 범위에 아무도 없으면 뒤쪽 1/3에서 선택)
 - B열에 상호명 기록
 """
 
@@ -118,14 +119,15 @@ def extract_results(driver):
 # 메인 실행
 # ─────────────────────────────────────────────
 def run():
-    RANK_MIN = 60
-    RANK_MAX = 180
-
     print("\n" + "=" * 60)
     print("   후순위 업체 랜덤 추출기")
     print("=" * 60)
 
     config = load_config()
+    # 추출 순위 범위 (GUI '추출 순위 범위' 칸에서 저장한 값, 없으면 60~180)
+    RANK_MIN = int(config.get("pick_rank_min", 60))
+    RANK_MAX = int(config.get("pick_rank_max", 180))
+    print(f"\n  추출 순위 범위: {RANK_MIN}~{RANK_MAX}위")
 
     # [1] 시트 연결
     print("\n[1/3] 구글 시트 연결 중...")
@@ -189,17 +191,20 @@ def run():
             total_count = len(named_results)
             max_rank = max(r["rank"] for r in named_results)
 
-            # 60등~최대등수 사이에서 필터
+            # 지정 범위(RANK_MIN~RANK_MAX)에서 필터 — 결과가 RANK_MAX까지 안 나오면 마지막 등수까지
             upper_bound = min(RANK_MAX, max_rank)
             candidates = [r for r in named_results if RANK_MIN <= r["rank"] <= upper_bound]
 
-            if not candidates:
-                # 60등 미만밖에 없으면 → 후반부 1/3에서 선택
+            if candidates:
+                print(f"    {RANK_MIN}~{upper_bound}위 후보 {len(candidates)}개")
+            else:
+                # 범위에 업체가 없으면(결과가 RANK_MIN위까지 안 나옴) → 뒤쪽 1/3에서 선택
                 cutoff = max(1, total_count * 2 // 3)
                 candidates = sorted(named_results, key=lambda r: r["rank"])[cutoff:]
                 if not candidates:
                     candidates = named_results[-1:]
-                print(f"    {RANK_MIN}~{upper_bound}등 업체 없음 → 후반부에서 선택 ({len(candidates)}개)")
+                print(f"    {RANK_MIN}~{RANK_MAX}위 업체 없음(마지막 {max_rank}위) → 뒤쪽 1/3"
+                      f"({candidates[0]['rank']}~{candidates[-1]['rank']}위)에서 선택")
 
             chosen = random.choice(candidates)
             print(f"    ★ 선택: {chosen['name']} (순위: {chosen['rank']}등)")
