@@ -3,7 +3,7 @@
 AD RANK 자동화 스크립트 v3.0 (2026-08 리뉴얼 사이트 대응)
 - 키워드 시트에서 키워드/상호명 읽기
 - adrank 플레이스 분석 데이터를 패킷(HTTP)으로 직접 조회 (브라우저 불필요, adrank_api.py)
-- 오늘 날짜에 기록된 순위를 오늘 칸에, 어제 기록을 어제 칸에 기록 (애드랭크 일자별 순위와 동일)
+- 오늘 날짜에 기록된 순위를 오늘 칸에, 지난 7일 칸도 그날 기록으로 다시 맞춤 (애드랭크 일자별 순위와 동일)
 - 응답의 placeId로 네이버 MID 바로 확보
 - 결과 시트에 날짜별로 기록 (4행 단위)
 """
@@ -1095,10 +1095,17 @@ def run():
     print("\n[4/5] 애드랭크 로그인 중...")
     client = connect_adrank(config)
     today = datetime.now()
-    yesterday = today - timedelta(days=1)
-    y_col = find_date_column(result_sheet, config, yesterday)
-    if y_col:
-        print(f"  -> 어제({yesterday.month}/{yesterday.day}) 열: {y_col}열 — 애드랭크 기록으로 다시 맞춤")
+    # 지난 N일 칸도 매번 애드랭크 기록으로 다시 맞춤 (키워드별 갱신 시각 차이로 늦게 찍힌 값 보정)
+    backfill_days = int(config.get("backfill_days", 7))
+    past_cols = []
+    for k in range(1, backfill_days + 1):
+        d = today - timedelta(days=k)
+        col = find_date_column(result_sheet, config, d)
+        if col:
+            past_cols.append((d, col))
+    if past_cols:
+        print(f"  -> 지난 {backfill_days}일 칸({past_cols[-1][0].month}/{past_cols[-1][0].day}~"
+              f"{past_cols[0][0].month}/{past_cols[0][0].day})도 애드랭크 기록으로 다시 맞춤")
 
     try:
         # 키워드별 그룹핑 (작업 대상만)
@@ -1129,7 +1136,7 @@ def run():
             # 오늘 날짜 기록 / 어제 날짜 기록을 각각 조회 (rankOld = 그 날짜에 기록된 순위)
             try:
                 results = parse_rows(client.search(keyword, today).get("list"))
-                y_results = parse_rows(client.search(keyword, yesterday).get("list")) if y_col else []
+                past_results = [(col, parse_rows(client.search(keyword, d).get("list"))) for d, col in past_cols]
             except AdrankError as e:
                 print(f"  X {e}, 건너뜁니다.")
                 continue
@@ -1236,12 +1243,16 @@ def run():
                         print(f"    -> 오늘 순위: {rank}")
                         write_cells.append((sheet_row, date_col, rank))
 
-                    # 어제 칸을 애드랭크의 어제 기록으로 다시 맞춤
-                    if y_col and matched.get("mid"):
-                        y = next((r for r in y_results if r["mid"] == matched["mid"]), None)
-                        if y and y["record"] is not None:
-                            write_cells.append((sheet_row, y_col, y["record"]))
-                            print(f"    -> 어제 순위: {y['record']}")
+                    # 지난 날짜 칸을 애드랭크의 그날 기록으로 다시 맞춤 (기록 없는 날은 그대로 둠)
+                    if matched.get("mid"):
+                        fixed = 0
+                        for col, rows in past_results:
+                            p = next((r for r in rows if r["mid"] == matched["mid"]), None)
+                            if p and p["record"] is not None:
+                                write_cells.append((sheet_row, col, p["record"]))
+                                fixed += 1
+                        if fixed:
+                            print(f"    -> 지난 {fixed}일 기록 다시 맞춤")
 
                     if mid and not ex.get("mid"):
                         write_cells.append((sheet_row + 2, 2, mid))
