@@ -93,3 +93,16 @@
 - sync_traffic.py 검증
 - 업체 추출을 업종 매칭되게 개선(원하면)
 - pick_random_biz가 MID도 바로 키워드시트에 쓰게 하면 ③단계 생략 가능
+
+---
+
+## 8. 2026-10-14 패킷 방식 전환 (브라우저 제거)
+- `adrank_api.py` 신규: 크롬/셀레니움 없이 HTTP로 로그인·조회
+  - 로그인 `POST /api/auth/login {"id","pwd"}` → `data.serviceToken`
+  - 조회 `POST /api/place/searchPlaceAnalyze {"keyword","cnt","targetDate":"YYYY.MM.DD"}` (+ `Authorization: Bearer`, `pathName: /place/analyze`)
+  - 업체별 `rankOld` = targetDate 날짜에 **기록된** 순위 → 플레이스 모니터링 '일자별 순위'와 동일(10/10~10/14 대조 확인). 기록 없는 날짜면 `rankOld` 키 자체가 없음
+  - `startDate` = 애드랭크가 그 키워드 기록을 시작한 날 (그 이전 날짜는 기록 없음)
+- 순위 검색(main.py): 오늘 칸 = 오늘 기록, **어제 칸 = 어제 기록으로 매번 다시 맞춤**(키워드마다 갱신 시각이 달라 오늘 값이 하루 늦게 찍히는 문제 대응). 매칭은 결과 시트 MID 우선 → 상호명 순
+- 업체 추출(pick_random_biz.py): 같은 클라이언트 사용, 순위 범위는 GUI `추출 순위 범위`(config `pick_rank_min/max`)
+- EXE: `build_exe.bat` (PyInstaller onefile, selenium 제외). config.json / credentials.json 은 exe 옆에 둠 (frozen이면 exe 폴더 기준)
+- setup.bat 패키지: requests, gspread, google-auth (selenium·chromedriver 불필요)

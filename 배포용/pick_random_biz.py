@@ -10,12 +10,13 @@
 import time
 import json
 import os
+import sys
 import re
 import random
 from datetime import datetime
 
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+CONFIG_PATH = os.path.join((os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))), "config.json")
 
 scheduled_start_time = None
 gui_enter_event = None
@@ -42,76 +43,25 @@ def connect_sheet(config):
     return wb.worksheet(config["keyword_sheet_name"])
 
 
-# 브라우저 관련 로직은 main.py(리뉴얼 사이트 대응)를 그대로 재사용
+# 애드랭크 조회는 패킷(HTTP) — 로그인/예약 대기는 main.connect_adrank 재사용
 import main as _main
+from adrank_api import AdrankError, parse_rows
 
 
-def setup_browser():
-    return _main.setup_browser()
-
-
-def wait_for_login(driver):
+def connect_adrank(config):
     global scheduled_start_time
-    # GUI가 이 모듈에 걸어준 예약시각/Enter 이벤트를 main 쪽으로 전달
+    # GUI가 이 모듈에 걸어준 예약시각을 main 쪽으로 전달
     _main.scheduled_start_time = scheduled_start_time
-    _main.gui_enter_event = gui_enter_event
     scheduled_start_time = None
-    _main.wait_for_login(driver)
+    return _main.connect_adrank(config)
 
 
-def search_keyword(driver, keyword):
-    return _main.search_keyword(driver, keyword)
-
-
-def extract_left_number(text):
-    text = text.strip()
-    if not text:
-        return ""
-    match = re.match(r'^(\d+\.?\d*)', text)
-    return match.group(1) if match else text
-
-
-def _extract_once(driver):
-    """페이지에서 한 번 추출 시도. (results, mid_count) 반환 — main의 테이블 파서 재사용"""
-    _, raw, mid_count = _main._extract_once(driver)
-    results = []
-    for item in raw:
-        try:
-            rank_str = item["rank"]
-            rank_num = int(rank_str) if rank_str and rank_str.isdigit() else 0
-            results.append({
-                "rank": rank_num,
-                "name": item["name"],
-                "score": item.get("score", ""),
-                "kw_list": item.get("kw_list", ""),  # 리뉴얼 사이트: 주소
-            })
-        except Exception:
-            continue
-    return results, mid_count
-
-
-def extract_results(driver):
-    results = []
-    try:
-        # 1차 즉시 추출
-        results, mid_count = _extract_once(driver)
-
-        if results and mid_count == 0:
-            # 링크가 아직 로드 안 됨 → 최대 10초 폴링
-            for retry in range(10):
-                time.sleep(1)
-                results, mid_count = _extract_once(driver)
-                if mid_count > 0:
-                    print(f"  -> 플레이스 링크 로드 완료 (+{retry+1}초)")
-                    break
-            else:
-                print(f"  -> 플레이스 링크 없음 (10초 대기 후 진행)")
-
-        print(f"  -> {len(results)}개 업체 추출 (최고 순위~{max((r['rank'] for r in results), default=0)}등)")
-
-    except Exception as e:
-        print(f"  [오류] 결과 추출 실패: {e}")
-
+def search_results(client, keyword):
+    """키워드 조회 → [{rank(int), name, kw_list}] (현재 순위 기준)"""
+    rows = parse_rows(client.search(keyword).get("list"))
+    results = [{"rank": int(r["rank"]) if r["rank"].isdigit() else 0,
+                "name": r["name"], "kw_list": r["kw_list"]} for r in rows]
+    print(f"  -> {len(results)}개 업체 추출 (최고 순위~{max((r['rank'] for r in results), default=0)}등)")
     return results
 
 
@@ -155,12 +105,11 @@ def run():
         print("\n  처리할 키워드가 없습니다. (B열이 모두 채워져 있음)")
         return
 
-    # [3] 브라우저 시작 + adrank 검색
-    print("\n[3/3] 브라우저 시작...")
-    driver = setup_browser()
+    # [3] 애드랭크 로그인 + 검색 (패킷)
+    print("\n[3/3] 애드랭크 로그인 중...")
+    client = connect_adrank(config)
 
     try:
-        wait_for_login(driver)
 
         results_summary = []
 
@@ -170,11 +119,12 @@ def run():
             print(f"\n{'─'*50}")
             print(f"  [{i}/{len(keywords)}] '{keyword}' 검색 (→ {row_num}행)")
 
-            if not search_keyword(driver, keyword):
-                print(f"    검색 실패, 스킵")
+            try:
+                all_results = search_results(client, keyword)
+            except AdrankError as e:
+                print(f"    {e}, 스킵")
                 continue
-
-            all_results = extract_results(driver)
+            time.sleep(float(config.get("api_delay", 1.5)))
 
             if not all_results:
                 print(f"    결과 없음, 스킵")
@@ -238,11 +188,6 @@ def run():
         print(f"\n[오류] {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        try:
-            driver.quit()
-        except:
-            pass
 
 
 if __name__ == "__main__":

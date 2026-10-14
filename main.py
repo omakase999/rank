@@ -2,19 +2,22 @@
 """
 AD RANK 자동화 스크립트 v3.0 (2026-08 리뉴얼 사이트 대응)
 - 키워드 시트에서 키워드/상호명 읽기
-- adrank.co.kr/place/analyze 플레이스 분석에서 검색
-- 결과 테이블에서 순위, 종합점수, 주소 추출
-- 매장명 링크 href에서 네이버 MID 바로 추출 (클릭 불필요)
+- adrank 플레이스 분석 데이터를 패킷(HTTP)으로 직접 조회 (브라우저 불필요, adrank_api.py)
+- 오늘 날짜에 기록된 순위를 오늘 칸에, 어제 기록을 어제 칸에 기록 (애드랭크 일자별 순위와 동일)
+- 응답의 placeId로 네이버 MID 바로 확보
 - 결과 시트에 날짜별로 기록 (4행 단위)
 """
 
 import time
 import json
 import os
+import sys
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+from adrank_api import AdrankClient, AdrankError, parse_rows
+
+CONFIG_PATH = os.path.join((os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))), "config.json")
 
 # GUI 예약 실행 시 설정됨 — 이 시각까지 대기 후 자동 시작
 scheduled_start_time = None
@@ -925,6 +928,40 @@ def extract_naver_url(driver, name_element):
 # ─────────────────────────────────────────────
 # 메인 실행
 # ─────────────────────────────────────────────
+def find_date_column(sheet, config, date):
+    """1행에서 date(월/일) 열 번호 반환. 없으면 None (새로 만들지 않음)"""
+    date_start_col = config.get("date_start_column", 7)
+    for col_idx, cell_value in enumerate(sheet.row_values(1)):
+        if col_idx < date_start_col - 1:
+            continue
+        m = re.match(r'^(\d{1,2})[/.\-](\d{1,2})', cell_value.strip().replace(" ", ""))
+        if m and int(m.group(1)) == date.month and int(m.group(2)) == date.day:
+            return col_idx + 1
+    return None
+
+
+def connect_adrank(config):
+    """애드랭크 패킷 로그인. GUI 예약 실행이면 예약 시각까지 기다린 뒤 로그인."""
+    global scheduled_start_time
+    if scheduled_start_time:
+        target = scheduled_start_time
+        scheduled_start_time = None
+        print(f"  ⏰ 예약 모드: {target.strftime('%H:%M:%S')}에 자동 시작됩니다.")
+        last_min = None
+        while datetime.now() < target:
+            mins = int((target - datetime.now()).total_seconds()) // 60
+            if mins != last_min:
+                print(f"  ⏳ 시작까지 약 {mins}분 남음...")
+                last_min = mins
+            time.sleep(1)
+        print(f"  ✅ {target.strftime('%H:%M:%S')} — 시작합니다!")
+
+    client = AdrankClient(config.get("adrank_id", ""), config.get("adrank_pw", ""))
+    client.login()
+    print(f"  -> 로그인 성공 ({config.get('adrank_id', '')})")
+    return client
+
+
 def run():
     print("\n" + "=" * 60)
     print("   AD RANK 자동화 프로그램 v3.0 (리뉴얼 사이트 대응)")
@@ -1054,22 +1091,24 @@ def run():
         batch_write(result_sheet, fill_cells)
         print(f"  -> {len(fill_cells)}개 키워드 보완 완료")
 
-    # [4] 브라우저 실행
-    print("\n[4/5] 브라우저 실행 중...")
-    driver = setup_browser()
+    # [4] 애드랭크 로그인 (패킷 — 브라우저 없음)
+    print("\n[4/5] 애드랭크 로그인 중...")
+    client = connect_adrank(config)
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    y_col = find_date_column(result_sheet, config, yesterday)
+    if y_col:
+        print(f"  -> 어제({yesterday.month}/{yesterday.day}) 열: {y_col}열 — 애드랭크 기록으로 다시 맞춤")
 
     try:
-        wait_for_login(driver)
-
         # 키워드별 그룹핑 (작업 대상만)
         keyword_groups = {}
         for biz in work_businesses:
-            kw = biz["keyword"]
-            if kw not in keyword_groups:
-                keyword_groups[kw] = []
-            keyword_groups[kw].append(biz)
+            keyword_groups.setdefault(biz["keyword"], []).append(biz)
 
         skipped_businesses = []
+        no_record = []
+        delay = float(config.get("api_delay", 1.5))
 
         print(f"\n[5/5] 검색 시작! (키워드 {len(keyword_groups)}개)")
         print("-" * 60)
@@ -1087,30 +1126,39 @@ def run():
                     clear_cells += [(row, date_col, ""), (row + 1, date_col, "")]
             batch_write(result_sheet, clear_cells)
 
-            if not search_keyword(driver, keyword):
-                print(f"  X 검색 실패, 건너뜁니다.")
+            # 오늘 날짜 기록 / 어제 날짜 기록을 각각 조회 (rankOld = 그 날짜에 기록된 순위)
+            try:
+                results = parse_rows(client.search(keyword, today).get("list"))
+                y_results = parse_rows(client.search(keyword, yesterday).get("list")) if y_col else []
+            except AdrankError as e:
+                print(f"  X {e}, 건너뜁니다.")
                 continue
-
-            results = extract_results(driver)
+            print(f"  -> {len(results)}개 업체")
             if not results:
                 print(f"  X 결과 없음")
                 continue
+            time.sleep(delay)
 
             for biz in biz_list:
                 target_name = biz["name"]
                 biz_match_kw = biz.get("match_keywords", "")
                 print(f"\n  >> '{target_name}' 찾는 중...")
+                ex = existing.get(biz["_key"], {})
 
-                # 매칭 (정확한 순서: 완전일치 → 포함 매칭)
+                # 0순위: 결과 시트에 MID가 있으면 MID로 정확히 찾음
                 matched = None
                 match_count = 0
+                if ex.get("mid"):
+                    matched = next((r for r in results if r["mid"] == str(ex["mid"])), None)
+                    match_count = 1 if matched else 0
 
                 # 1순위: 완전 일치
-                for r in results:
-                    if r["name"] == target_name:
-                        match_count += 1
-                        if not matched:
-                            matched = r
+                if not matched:
+                    for r in results:
+                        if r["name"] == target_name:
+                            match_count += 1
+                            if not matched:
+                                matched = r
 
                 # 2순위: target이 result에 포함 (결과에 지점명 등이 붙은 경우)
                 if not matched:
@@ -1165,31 +1213,36 @@ def run():
                         matched = None
                         skipped_businesses.append(f"{target_name} ({keyword}) - 동일 상호 {match_count}개")
 
-                ex = existing.get(biz["_key"], {})
                 sheet_row = ex.get("sheet_row")
                 if not sheet_row:
                     print(f"    X 결과 시트 행 없음, 건너뜀")
                     continue
 
                 if matched:
-                    rank = matched["rank"]
-                    score = matched["score"]
-                    print(f"    -> 순위: {rank}, 점수: {score}")
-
+                    rank = matched["record"]   # 오늘 날짜에 기록된 순위
                     mid = ex.get("mid", "")
                     naver_url = ""
                     if not mid:
-                        # 리뉴얼 사이트: 매장명 링크 href에 MID 포함 (클릭 불필요)
                         mid = matched.get("mid", "")
                         naver_url = matched.get("url", "")
                         if mid:
                             print(f"    -> MID: {mid}")
 
-                    # 결과 일괄 쓰기
-                    write_cells = [
-                        (sheet_row, date_col, rank),
-                        (sheet_row + 1, date_col, score),
-                    ]
+                    write_cells = []
+                    if rank is None:
+                        print(f"    -> 오늘 기록 아직 없음 (오늘 칸 비워둠)")
+                        no_record.append(f"{target_name} ({keyword})")
+                    else:
+                        print(f"    -> 오늘 순위: {rank}")
+                        write_cells.append((sheet_row, date_col, rank))
+
+                    # 어제 칸을 애드랭크의 어제 기록으로 다시 맞춤
+                    if y_col and matched.get("mid"):
+                        y = next((r for r in y_results if r["mid"] == matched["mid"]), None)
+                        if y and y["record"] is not None:
+                            write_cells.append((sheet_row, y_col, y["record"]))
+                            print(f"    -> 어제 순위: {y['record']}")
+
                     if mid and not ex.get("mid"):
                         write_cells.append((sheet_row + 2, 2, mid))
                     if naver_url and not ex.get("mid"):
@@ -1204,17 +1257,20 @@ def run():
                         (sheet_row + 1, date_col, "미발견"),
                     ])
 
-            # 시트 기록 완료 후 바로 다음 키워드 진행
-
         print("\n" + "=" * 60)
         print("  검색 작업 완료!")
         print("=" * 60)
 
+        if no_record:
+            print(f"\n[오늘 기록이 아직 없는 업체] ({len(no_record)}개) — 나중에 다시 돌리면 채워집니다")
+            for s_ in no_record:
+                print(f"  - {s_}")
+
         if skipped_businesses:
             print(f"\n[스킵된 업체 목록] ({len(skipped_businesses)}개)")
             print("-" * 60)
-            for s in skipped_businesses:
-                print(f"  - {s}")
+            for s_ in skipped_businesses:
+                print(f"  - {s_}")
             print("-" * 60)
             print("  → 키워드 시트 F열에 매장 주소(예: 수원 영통구 이의동)를 입력하면 매칭할 수 있습니다.")
         else:
@@ -1222,19 +1278,6 @@ def run():
 
     except KeyboardInterrupt:
         print("\n\n사용자가 중단했습니다.")
-    except Exception as e:
-        print(f"\n[오류] {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if gui_enter_event:
-            print("\n브라우저를 닫습니다...")
-        else:
-            input("\nEnter를 누르면 브라우저를 닫습니다...")
-        try:
-            driver.quit()
-        except:
-            pass
 
     print("\n" + "=" * 60)
     print("  모든 작업 완료!")

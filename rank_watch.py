@@ -37,13 +37,6 @@ def pick_sample(config):
     return sample
 
 
-def login(driver, config):
-    driver.get("https://adrank.co.kr/")
-    main.auto_fill_login(driver, config)
-    time.sleep(5)
-    main.dismiss_popups(driver)
-
-
 def find_rank(rows, biz):
     for r in rows:
         if biz["mid"] and r["mid"] == biz["mid"]:
@@ -62,20 +55,18 @@ def run():
     print(f"  -> 결과 파일: {OUT_FILE}\n")
 
     new_file = not os.path.exists(OUT_FILE)
-    driver = main.setup_browser()
-    login(driver, config)
+    client = main.connect_adrank(config)
     previous = {}
     try:
         while True:
             now = datetime.now().strftime("%Y-%m-%d %H:%M")
             current = {}
             for biz in sample:
-                res = main.api_search_place(driver, biz["keyword"])
-                if not (isinstance(res, dict) and res.get("result")):
-                    login(driver, config)  # 세션 만료 시 재로그인 후 한 번 더
-                    res = main.api_search_place(driver, biz["keyword"])
-                items = (res.get("data") or {}).get("list") or [] if isinstance(res, dict) else []
-                current[biz["name"]] = find_rank(main._parse_api_rows(items), biz) if items else "조회실패"
+                try:
+                    items = client.search(biz["keyword"]).get("list") or []
+                except main.AdrankError:
+                    items = []
+                current[biz["name"]] = find_rank(main.parse_rows(items), biz) if items else "조회실패"
                 time.sleep(3)
 
             with open(OUT_FILE, "a", newline="", encoding="utf-8-sig") as f:
@@ -95,11 +86,6 @@ def run():
             time.sleep(INTERVAL_MINUTES * 60)
     except KeyboardInterrupt:
         print("\n중단했습니다.")
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

@@ -26,3 +26,9 @@ Desktop.ini
 
 # 순위 갱신 시각 기록
 rank_watch.csv
+
+# EXE 빌드 산출물
+build/
+dist/
+*.spec
+ADRANK.exe

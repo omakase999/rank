@@ -17,7 +17,7 @@ import time
 import importlib
 from datetime import datetime, timedelta
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 # 작업 목록 (모듈명, 표시명, 설명) — 여러 개 체크 시 이 순서대로 실행됨
@@ -139,7 +139,7 @@ class App:
 
         self.enter_btn = ttk.Button(time_row, text="Enter ▶", command=self.gui_enter,
                                     width=10, state="disabled")
-        self.enter_btn.pack(side="left", padx=(0, 10))
+        # (패킷 방식은 로그인 대기가 없어 Enter 버튼을 화면에 표시하지 않음)
 
         self.clock_label = ttk.Label(time_row, text="", foreground="gray")
         self.clock_label.pack(side="left", padx=(5, 0))
@@ -243,7 +243,7 @@ class App:
 
         has_browser_task = any(mod in selected for mod in ("main", "pick_random_biz"))
         if not has_browser_task:
-            messagebox.showwarning("알림", "예약 실행은 브라우저 작업(순위 검색 또는 업체 추출)이 포함되어야 합니다.")
+            messagebox.showwarning("알림", "예약 실행은 순위 검색 또는 업체 추출이 포함되어야 합니다.")
             return
 
         try:
@@ -265,9 +265,8 @@ class App:
         self.cancel_schedule_btn.config(state="normal")
         self.start_btn.config(state="disabled")
         self.schedule_status.config(
-            text=f"⏰ {target.strftime('%Y-%m-%d %H:%M')}에 검색 시작 예정 — 브라우저를 먼저 엽니다")
+            text=f"⏰ {target.strftime('%Y-%m-%d %H:%M')}에 검색 시작 예정")
         self.log(f"[예약] {target.strftime('%Y-%m-%d %H:%M')}에 검색 시작 예약")
-        self.log(f"[예약] 브라우저가 먼저 열립니다. 로그인을 완료해주세요.")
         self.log(f"[예약] 약 {int(delay_sec//3600)}시간 {int((delay_sec%3600)//60)}분 후 자동 시작")
 
         self.start(scheduled=True)
@@ -337,17 +336,9 @@ class App:
                 try:
                     mod = importlib.import_module(mod_name)
                     importlib.reload(mod)
-                    if mod_name in ("main", "pick_random_biz"):
-                        if target_time:
-                            mod.scheduled_start_time = target_time
-                        else:
-                            self._enter_event = threading.Event()
-                            mod.gui_enter_event = self._enter_event
-                            self.root.after(0, lambda: self.enter_btn.config(state="normal"))
+                    if mod_name in ("main", "pick_random_biz") and target_time:
+                        mod.scheduled_start_time = target_time   # 예약 시각까지 대기 후 애드랭크 로그인
                     mod.run()
-                    if mod_name in ("main", "pick_random_biz"):
-                        self._enter_event = None
-                        self.root.after(0, lambda: self.enter_btn.config(state="disabled"))
                     results[task_label] = "완료"
                 except KeyboardInterrupt:
                     results[task_label] = "중지"

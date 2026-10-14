@@ -24,7 +24,7 @@ echo [1/2] Python 확인 완료
 echo.
 
 echo [2/2] 필요한 패키지 설치 중...
-%PY% -m pip install selenium gspread google-auth chromedriver-autoinstaller --quiet
+%PY% -m pip install requests gspread google-auth --quiet
 
 echo.
 echo ================================================
