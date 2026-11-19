@@ -553,7 +553,7 @@ def extract_left_number(text):
 _LAST_RESULTS = None
 
 
-def api_search_place(driver, keyword, cnt=300):
+def api_search_place(driver, keyword, cnt=180):
     """플레이스 분석 API 직접 호출.
     인증: localStorage.serviceToken → Authorization Bearer 헤더."""
     driver.set_script_timeout(90)

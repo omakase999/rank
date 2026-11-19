@@ -9,6 +9,7 @@
   (플레이스 모니터링 '일자별 순위'와 같은 값. 아직 기록이 없는 날짜면 rankOld 자체가 없음)
 """
 
+import re
 import time
 
 import requests
@@ -48,14 +49,15 @@ class AdrankClient:
         self.token = token
         return True
 
-    def search(self, keyword, target_date=None, cnt=300):
+    def search(self, keyword, target_date=None, cnt=180):
         """키워드 분석 결과(data dict) 반환. target_date: datetime/date 또는 'YYYY.MM.DD'.
-        세션 만료(401)면 한 번 재로그인 후 재시도."""
+        세션 만료(401)면 재로그인 후 재시도.
+        애드랭크가 분석 개수 한도를 낮추면(예: '180개까지') 그 숫자로 자동 재시도."""
         body = {"keyword": keyword, "cnt": cnt}
         if target_date is not None:
             body["targetDate"] = target_date if isinstance(target_date, str) else target_date.strftime("%Y.%m.%d")
 
-        for attempt in range(3):
+        for attempt in range(4):
             if not self.token:
                 self.login()
             try:
@@ -68,7 +70,7 @@ class AdrankClient:
                 )
                 data = res.json()
             except (requests.RequestException, ValueError) as e:
-                if attempt == 2:
+                if attempt == 3:
                     raise AdrankError(f"조회 실패: {e}")
                 time.sleep(3)
                 continue
@@ -76,7 +78,13 @@ class AdrankClient:
                 self.token = None          # 재로그인 후 재시도
                 continue
             if not data.get("result"):
-                raise AdrankError(f"조회 실패: {data.get('responseMsg')}")
+                msg = data.get("responseMsg") or ""
+                # "분석 개수는 180개까지 고를 수 있어요." → 한도 숫자로 자동 재시도
+                m = re.search(r"(\d+)\s*개까지", msg)
+                if m and int(m.group(1)) < body["cnt"]:
+                    body["cnt"] = int(m.group(1))
+                    continue
+                raise AdrankError(f"조회 실패: {msg}")
             return data.get("data") or {}
         raise AdrankError("조회 실패: 로그인 세션을 유지할 수 없습니다")
 
